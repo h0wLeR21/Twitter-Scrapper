@@ -1,295 +1,464 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import os
 from datetime import datetime
+import os
+from collections import Counter
+import re
 
-class SentimentPlotGenerator:
-    def __init__(self):
-        # Set style
-        sns.set_style("whitegrid")
-        plt.rcParams['figure.figsize'] = (12, 8)
-        plt.rcParams['font.size'] = 10
+# ---------------------------
+# Configuration
+# ---------------------------
+
+RESULTS_DATA_PATH = r"D:\code\Edure\New folder\Twitter-Scrapper\data\results"
+PLOTS_PATH = r"D:\code\Edure\New folder\Twitter-Scrapper\src\visualization\plots"
+
+# Style settings
+plt.style.use('seaborn-v0_8-whitegrid')
+COLORS = {
+    'positive': '#2ecc71',
+    'neutral': '#3498db', 
+    'negative': '#e74c3c',
+    'primary': '#9b59b6',
+    'secondary': '#1abc9c'
+}
+
+# ---------------------------
+# Plot Generator Class
+# ---------------------------
+
+class PlotGenerator:
+    def __init__(self, output_dir=None):
+        self.output_dir = output_dir or PLOTS_PATH
+        os.makedirs(self.output_dir, exist_ok=True)
         
-    def load_data(self, file_path):
-        """Load sentiment results from CSV"""
-        print(f"Loading data from: {file_path}")
-        df = pd.read_csv(file_path)
-        
-        # Convert date column if exists
-        date_columns = ['date', 'created_at', 'timestamp', 'Date', 'Created_at']
-        for col in date_columns:
-            if col in df.columns:
-                try:
-                    df[col] = pd.to_datetime(df[col])
-                    df['date'] = df[col]
-                    break
-                except:
-                    continue
-        
-        print(f"Loaded {len(df)} records")
-        return df
+    def save_plot(self, fig, filename):
+        """Save plot to output directory."""
+        filepath = os.path.join(self.output_dir, filename)
+        fig.savefig(filepath, dpi=150, bbox_inches='tight', facecolor='white')
+        plt.close(fig)
+        print(f"Saved: {filename}")
+        return filepath
     
-    def plot_sentiment_distribution(self, df, output_path):
-        """Plot sentiment distribution pie chart and bar chart"""
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-        
-        sentiment_counts = df['sentiment'].value_counts()
-        colors = {'positive': '#2ecc71', 'neutral': '#95a5a6', 'negative': '#e74c3c'}
-        plot_colors = [colors.get(sent, '#3498db') for sent in sentiment_counts.index]
-        
-        # Pie chart
-        ax1.pie(sentiment_counts.values, labels=sentiment_counts.index, 
-                autopct='%1.1f%%', colors=plot_colors, startangle=90,
-                textprops={'fontsize': 12, 'weight': 'bold'})
-        ax1.set_title('Sentiment Distribution', fontsize=14, weight='bold', pad=20)
-        
-        # Bar chart
-        bars = ax2.bar(sentiment_counts.index, sentiment_counts.values, color=plot_colors, alpha=0.8)
-        ax2.set_title('Sentiment Counts', fontsize=14, weight='bold', pad=20)
-        ax2.set_xlabel('Sentiment', fontsize=12, weight='bold')
-        ax2.set_ylabel('Count', fontsize=12, weight='bold')
-        ax2.grid(axis='y', alpha=0.3)
-        
-        # Add value labels on bars
-        for bar in bars:
-            height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height,
-                    f'{int(height)}',
-                    ha='center', va='bottom', fontsize=11, weight='bold')
-        
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {output_path}")
-        plt.close()
+    # ---------------------------
+    # Sentiment Plots
+    # ---------------------------
     
-    def plot_sentiment_scores(self, df, output_path):
-        """Plot distribution of sentiment scores"""
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    def plot_sentiment_distribution(self, df, filename='sentiment_distribution.png'):
+        """Pie chart of sentiment distribution."""
+        fig, ax = plt.subplots(figsize=(10, 8))
         
-        scores = ['pos_score', 'neu_score', 'neg_score', 'compound_score']
-        titles = ['Positive Scores', 'Neutral Scores', 'Negative Scores', 'Compound Scores']
-        colors_list = ['#2ecc71', '#95a5a6', '#e74c3c', '#3498db']
+        counts = df['sentiment'].value_counts()
+        colors = [COLORS.get(s, '#95a5a6') for s in counts.index]
         
-        for idx, (score, title, color) in enumerate(zip(scores, titles, colors_list)):
-            ax = axes[idx // 2, idx % 2]
-            
-            # Histogram
-            ax.hist(df[score], bins=30, color=color, alpha=0.7, edgecolor='black')
-            ax.set_title(title, fontsize=14, weight='bold', pad=15)
-            ax.set_xlabel('Score', fontsize=11, weight='bold')
-            ax.set_ylabel('Frequency', fontsize=11, weight='bold')
-            ax.grid(axis='y', alpha=0.3)
-            
-            # Add mean line
-            mean_val = df[score].mean()
-            ax.axvline(mean_val, color='red', linestyle='--', linewidth=2, 
-                      label=f'Mean: {mean_val:.3f}')
-            ax.legend(fontsize=10)
+        wedges, texts, autotexts = ax.pie(
+            counts.values,
+            labels=counts.index.str.capitalize(),
+            autopct='%1.1f%%',
+            colors=colors,
+            explode=[0.02] * len(counts),
+            shadow=True,
+            startangle=90
+        )
         
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {output_path}")
-        plt.close()
+        for autotext in autotexts:
+            autotext.set_fontsize(12)
+            autotext.set_fontweight('bold')
+        
+        ax.set_title('Sentiment Distribution', fontsize=16, fontweight='bold', pad=20)
+        
+        total = len(df)
+        ax.text(0, -1.3, f'Total: {total:,} tweets', ha='center', fontsize=11)
+        
+        return self.save_plot(fig, filename)
     
-    def plot_sentiment_over_time(self, df, output_path):
-        """Plot sentiment trends over time"""
+    def plot_sentiment_bar(self, df, filename='sentiment_bar.png'):
+        """Bar chart of sentiment counts."""
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        counts = df['sentiment'].value_counts().reindex(['positive', 'neutral', 'negative'])
+        colors = [COLORS[s] for s in counts.index]
+        
+        bars = ax.bar(counts.index.str.capitalize(), counts.values, color=colors, edgecolor='white', linewidth=2)
+        
+        for bar, count in zip(bars, counts.values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 50,
+                   f'{count:,}', ha='center', va='bottom', fontsize=12, fontweight='bold')
+        
+        ax.set_xlabel('Sentiment', fontsize=12)
+        ax.set_ylabel('Count', fontsize=12)
+        ax.set_title('Sentiment Distribution', fontsize=16, fontweight='bold')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        return self.save_plot(fig, filename)
+    
+    def plot_compound_score_distribution(self, df, filename='compound_distribution.png'):
+        """Histogram of compound scores."""
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        ax.hist(df['compound_score'], bins=50, color=COLORS['primary'], 
+                edgecolor='white', alpha=0.8)
+        
+        ax.axvline(x=0.05, color=COLORS['positive'], linestyle='--', 
+                  linewidth=2, label='Positive threshold')
+        ax.axvline(x=-0.05, color=COLORS['negative'], linestyle='--', 
+                  linewidth=2, label='Negative threshold')
+        ax.axvline(x=df['compound_score'].mean(), color='black', linestyle='-', 
+                  linewidth=2, label=f'Mean ({df["compound_score"].mean():.3f})')
+        
+        ax.set_xlabel('Compound Score', fontsize=12)
+        ax.set_ylabel('Frequency', fontsize=12)
+        ax.set_title('Distribution of Compound Sentiment Scores', fontsize=16, fontweight='bold')
+        ax.legend(loc='upper right')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        return self.save_plot(fig, filename)
+    
+    def plot_sentiment_over_time(self, df, filename='sentiment_timeline.png'):
+        """Line plot of sentiment over time."""
+        if 'created_at' not in df.columns and 'date' not in df.columns:
+            print("No date column found. Skipping timeline plot.")
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 6))
+        
         if 'date' not in df.columns:
-            print("No date column found, skipping time series plot")
-            return
+            df['date'] = pd.to_datetime(df['created_at']).dt.date
         
-        df_time = df.copy()
-        df_time = df_time.sort_values('date')
-        df_time['date_only'] = df_time['date'].dt.date
+        daily = df.groupby(['date', 'sentiment']).size().unstack(fill_value=0)
         
-        # Sentiment counts over time
-        sentiment_by_date = df_time.groupby(['date_only', 'sentiment']).size().unstack(fill_value=0)
+        for sentiment in ['positive', 'neutral', 'negative']:
+            if sentiment in daily.columns:
+                ax.plot(daily.index, daily[sentiment], 
+                       color=COLORS[sentiment], linewidth=2, 
+                       marker='o', markersize=4, label=sentiment.capitalize())
         
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
+        ax.set_xlabel('Date', fontsize=12)
+        ax.set_ylabel('Tweet Count', fontsize=12)
+        ax.set_title('Sentiment Trend Over Time', fontsize=16, fontweight='bold')
+        ax.legend(loc='upper right')
+        plt.xticks(rotation=45)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
-        # Stacked area chart
-        colors = {'positive': '#2ecc71', 'neutral': '#95a5a6', 'negative': '#e74c3c'}
-        sentiment_by_date.plot(kind='area', stacked=True, ax=ax1, 
-                              color=[colors.get(col, '#3498db') for col in sentiment_by_date.columns],
-                              alpha=0.7)
-        ax1.set_title('Sentiment Trends Over Time (Stacked)', fontsize=14, weight='bold', pad=20)
-        ax1.set_xlabel('Date', fontsize=12, weight='bold')
-        ax1.set_ylabel('Number of Tweets', fontsize=12, weight='bold')
-        ax1.legend(title='Sentiment', fontsize=10)
-        ax1.grid(alpha=0.3)
-        
-        # Line chart for compound score
-        compound_by_date = df_time.groupby('date_only')['compound_score'].mean()
-        ax2.plot(compound_by_date.index, compound_by_date.values, 
-                marker='o', linewidth=2, markersize=4, color='#3498db')
-        ax2.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-        ax2.fill_between(compound_by_date.index, compound_by_date.values, 0, 
-                        where=(compound_by_date.values > 0), alpha=0.3, color='#2ecc71', label='Positive')
-        ax2.fill_between(compound_by_date.index, compound_by_date.values, 0, 
-                        where=(compound_by_date.values < 0), alpha=0.3, color='#e74c3c', label='Negative')
-        ax2.set_title('Average Compound Score Over Time', fontsize=14, weight='bold', pad=20)
-        ax2.set_xlabel('Date', fontsize=12, weight='bold')
-        ax2.set_ylabel('Average Compound Score', fontsize=12, weight='bold')
-        ax2.legend(fontsize=10)
-        ax2.grid(alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {output_path}")
-        plt.close()
+        return self.save_plot(fig, filename)
     
-    def plot_word_length_sentiment(self, df, output_path):
-        """Plot relationship between text length and sentiment"""
-        df['text_length'] = df['text'].astype(str).apply(len)
-        df['word_count'] = df['text'].astype(str).apply(lambda x: len(x.split()))
+    def plot_hourly_sentiment(self, df, filename='hourly_sentiment.png'):
+        """Heatmap of sentiment by hour."""
+        if 'hour' not in df.columns and 'created_at' not in df.columns:
+            print("No hour data found. Skipping hourly plot.")
+            return None
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+        fig, ax = plt.subplots(figsize=(14, 6))
         
-        # Box plot for word count by sentiment
-        sentiment_order = ['negative', 'neutral', 'positive']
-        colors = {'positive': '#2ecc71', 'neutral': '#95a5a6', 'negative': '#e74c3c'}
+        if 'hour' not in df.columns:
+            df['hour'] = pd.to_datetime(df['created_at']).dt.hour
         
-        box_data = [df[df['sentiment'] == sent]['word_count'].values 
-                   for sent in sentiment_order if sent in df['sentiment'].values]
-        box_colors = [colors[sent] for sent in sentiment_order if sent in df['sentiment'].values]
+        hourly = df.groupby(['hour', 'sentiment']).size().unstack(fill_value=0)
+        hourly_pct = hourly.div(hourly.sum(axis=1), axis=0) * 100
         
-        bp = ax1.boxplot(box_data, labels=[s.capitalize() for s in sentiment_order if s in df['sentiment'].values],
-                        patch_artist=True, showmeans=True)
+        x = range(24)
+        width = 0.25
         
-        for patch, color in zip(bp['boxes'], box_colors):
+        for i, sentiment in enumerate(['positive', 'neutral', 'negative']):
+            if sentiment in hourly_pct.columns:
+                values = [hourly_pct[sentiment].get(h, 0) for h in x]
+                ax.bar([h + i*width for h in x], values, width, 
+                      color=COLORS[sentiment], label=sentiment.capitalize())
+        
+        ax.set_xlabel('Hour of Day', fontsize=12)
+        ax.set_ylabel('Percentage', fontsize=12)
+        ax.set_title('Sentiment Distribution by Hour', fontsize=16, fontweight='bold')
+        ax.set_xticks([h + width for h in x])
+        ax.set_xticklabels([f'{h:02d}:00' for h in x], rotation=45)
+        ax.legend(loc='upper right')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        return self.save_plot(fig, filename)
+    
+    # ---------------------------
+    # Engagement Plots
+    # ---------------------------
+    
+    def plot_engagement_by_sentiment(self, df, filename='engagement_sentiment.png'):
+        """Box plot of engagement by sentiment."""
+        if 'total_engagement' not in df.columns:
+            eng_cols = ['like_count', 'retweet_count', 'comment_count']
+            available = [c for c in eng_cols if c in df.columns]
+            if not available:
+                print("No engagement columns found. Skipping.")
+                return None
+            df['total_engagement'] = df[available].sum(axis=1)
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        order = ['positive', 'neutral', 'negative']
+        colors = [COLORS[s] for s in order]
+        
+        bp = ax.boxplot([df[df['sentiment'] == s]['total_engagement'].values for s in order],
+                       labels=[s.capitalize() for s in order], patch_artist=True)
+        
+        for patch, color in zip(bp['boxes'], colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.7)
         
-        ax1.set_title('Word Count Distribution by Sentiment', fontsize=14, weight='bold', pad=20)
-        ax1.set_xlabel('Sentiment', fontsize=12, weight='bold')
-        ax1.set_ylabel('Word Count', fontsize=12, weight='bold')
-        ax1.grid(axis='y', alpha=0.3)
+        ax.set_xlabel('Sentiment', fontsize=12)
+        ax.set_ylabel('Total Engagement', fontsize=12)
+        ax.set_title('Engagement Distribution by Sentiment', fontsize=16, fontweight='bold')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
-        # Scatter plot: word count vs compound score
-        sentiment_colors = df['sentiment'].map(colors)
-        ax2.scatter(df['word_count'], df['compound_score'], 
-                   c=sentiment_colors, alpha=0.5, s=30)
-        ax2.set_title('Word Count vs Compound Score', fontsize=14, weight='bold', pad=20)
-        ax2.set_xlabel('Word Count', fontsize=12, weight='bold')
-        ax2.set_ylabel('Compound Score', fontsize=12, weight='bold')
-        ax2.axhline(y=0, color='black', linestyle='--', linewidth=1, alpha=0.5)
-        ax2.grid(alpha=0.3)
-        
-        # Add legend
-        from matplotlib.patches import Patch
-        legend_elements = [Patch(facecolor=colors[sent], alpha=0.7, label=sent.capitalize()) 
-                          for sent in ['positive', 'neutral', 'negative']]
-        ax2.legend(handles=legend_elements, title='Sentiment', fontsize=10)
-        
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {output_path}")
-        plt.close()
+        return self.save_plot(fig, filename)
     
-    def plot_correlation_heatmap(self, df, output_path):
-        """Plot correlation heatmap of sentiment scores"""
-        score_cols = ['pos_score', 'neu_score', 'neg_score', 'compound_score']
+    def plot_engagement_scatter(self, df, filename='engagement_scatter.png'):
+        """Scatter plot of compound score vs engagement."""
+        if 'total_engagement' not in df.columns:
+            print("No engagement data. Skipping scatter plot.")
+            return None
         
-        if 'word_count' in df.columns:
-            score_cols.append('word_count')
+        fig, ax = plt.subplots(figsize=(12, 8))
         
-        corr_matrix = df[score_cols].corr()
+        colors = df['sentiment'].map(COLORS)
         
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(corr_matrix, annot=True, fmt='.3f', cmap='coolwarm', 
-                   center=0, square=True, linewidths=1, cbar_kws={"shrink": 0.8})
-        plt.title('Correlation Matrix of Sentiment Scores', fontsize=14, weight='bold', pad=20)
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Saved: {output_path}")
-        plt.close()
+        scatter = ax.scatter(df['compound_score'], df['total_engagement'],
+                           c=colors, alpha=0.5, s=30, edgecolor='white', linewidth=0.5)
+        
+        ax.set_xlabel('Compound Sentiment Score', fontsize=12)
+        ax.set_ylabel('Total Engagement', fontsize=12)
+        ax.set_title('Sentiment vs Engagement', fontsize=16, fontweight='bold')
+        
+        # Legend
+        handles = [plt.scatter([], [], c=COLORS[s], label=s.capitalize(), s=100) 
+                  for s in ['positive', 'neutral', 'negative']]
+        ax.legend(handles=handles, loc='upper right')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        return self.save_plot(fig, filename)
     
-    def generate_all_plots(self, csv_file):
-        """Generate all visualization plots"""
-        # Load data
-        df = self.load_data(csv_file)
+    # ---------------------------
+    # Word Analysis Plots
+    # ---------------------------
+    
+    def plot_word_frequency(self, df, filename='word_frequency.png', top_n=20):
+        """Bar chart of most common words."""
+        text_col = 'text_cleaned' if 'text_cleaned' in df.columns else 'text'
         
-        # Create output directory
-        results_dir = os.path.dirname(csv_file)
-        plots_dir = os.path.join(results_dir, 'plots')
-        os.makedirs(plots_dir, exist_ok=True)
+        all_words = ' '.join(df[text_col].dropna()).lower().split()
         
-        # Extract username from filename
-        filename = os.path.basename(csv_file)
-        username = filename.split('_')[0] if '_' in filename else 'user'
+        # Remove short words
+        all_words = [w for w in all_words if len(w) > 2]
         
-        print(f"\nGenerating plots for {username}...\n")
+        word_counts = Counter(all_words).most_common(top_n)
         
-        # Generate plots
-        self.plot_sentiment_distribution(
-            df, 
-            os.path.join(plots_dir, f'{username}_sentiment_distribution.png')
-        )
+        fig, ax = plt.subplots(figsize=(12, 8))
         
-        self.plot_sentiment_scores(
-            df, 
-            os.path.join(plots_dir, f'{username}_sentiment_scores.png')
-        )
+        words, counts = zip(*word_counts)
+        y_pos = range(len(words))
         
-        self.plot_sentiment_over_time(
-            df, 
-            os.path.join(plots_dir, f'{username}_sentiment_timeline.png')
-        )
+        bars = ax.barh(y_pos, counts, color=COLORS['primary'], edgecolor='white')
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(words)
+        ax.invert_yaxis()
         
-        self.plot_word_length_sentiment(
-            df, 
-            os.path.join(plots_dir, f'{username}_word_analysis.png')
-        )
+        ax.set_xlabel('Frequency', fontsize=12)
+        ax.set_title(f'Top {top_n} Most Common Words', fontsize=16, fontweight='bold')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
-        self.plot_correlation_heatmap(
-            df, 
-            os.path.join(plots_dir, f'{username}_correlation_heatmap.png')
-        )
+        return self.save_plot(fig, filename)
+    
+    def plot_word_frequency_by_sentiment(self, df, filename='words_by_sentiment.png', top_n=10):
+        """Word frequency split by sentiment."""
+        fig, axes = plt.subplots(1, 3, figsize=(18, 8))
         
-        print(f"\n{'='*50}")
-        print(f"All plots saved to: {plots_dir}")
-        print(f"{'='*50}")
+        text_col = 'text_cleaned' if 'text_cleaned' in df.columns else 'text'
+        
+        for ax, sentiment in zip(axes, ['positive', 'neutral', 'negative']):
+            subset = df[df['sentiment'] == sentiment]
+            words = ' '.join(subset[text_col].dropna()).lower().split()
+            words = [w for w in words if len(w) > 2]
+            
+            word_counts = Counter(words).most_common(top_n)
+            
+            if word_counts:
+                words_list, counts = zip(*word_counts)
+                y_pos = range(len(words_list))
+                
+                ax.barh(y_pos, counts, color=COLORS[sentiment], edgecolor='white')
+                ax.set_yticks(y_pos)
+                ax.set_yticklabels(words_list)
+                ax.invert_yaxis()
+            
+            ax.set_title(f'{sentiment.capitalize()}', fontsize=14, fontweight='bold')
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+        
+        fig.suptitle('Top Words by Sentiment', fontsize=16, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        
+        return self.save_plot(fig, filename)
+    
+    # ---------------------------
+    # Summary Dashboard
+    # ---------------------------
+    
+    def create_dashboard(self, df, filename='dashboard.png'):
+        """Create a comprehensive dashboard."""
+        fig = plt.figure(figsize=(20, 16))
+        
+        # 1. Sentiment pie chart
+        ax1 = fig.add_subplot(2, 3, 1)
+        counts = df['sentiment'].value_counts()
+        colors = [COLORS.get(s, '#95a5a6') for s in counts.index]
+        ax1.pie(counts.values, labels=counts.index.str.capitalize(),
+               autopct='%1.1f%%', colors=colors, startangle=90)
+        ax1.set_title('Sentiment Distribution', fontweight='bold')
+        
+        # 2. Compound score histogram
+        ax2 = fig.add_subplot(2, 3, 2)
+        ax2.hist(df['compound_score'], bins=30, color=COLORS['primary'], edgecolor='white')
+        ax2.axvline(x=df['compound_score'].mean(), color='red', linestyle='--', linewidth=2)
+        ax2.set_title('Compound Score Distribution', fontweight='bold')
+        ax2.set_xlabel('Compound Score')
+        
+        # 3. Sentiment strength
+        ax3 = fig.add_subplot(2, 3, 3)
+        if 'sentiment_strength' in df.columns:
+            strength = df['sentiment_strength'].value_counts()
+            ax3.bar(strength.index.str.capitalize(), strength.values, 
+                   color=COLORS['secondary'], edgecolor='white')
+            ax3.set_title('Sentiment Strength', fontweight='bold')
+        
+        # 4. Timeline (if dates available)
+        ax4 = fig.add_subplot(2, 3, 4)
+        if 'date' in df.columns or 'created_at' in df.columns:
+            if 'date' not in df.columns:
+                df['date'] = pd.to_datetime(df['created_at']).dt.date
+            daily = df.groupby('date').size()
+            ax4.plot(daily.index, daily.values, color=COLORS['primary'], linewidth=2)
+            ax4.fill_between(daily.index, daily.values, alpha=0.3, color=COLORS['primary'])
+            ax4.set_title('Tweet Volume Over Time', fontweight='bold')
+            plt.setp(ax4.xaxis.get_majorticklabels(), rotation=45)
+        
+        # 5. Score components
+        ax5 = fig.add_subplot(2, 3, 5)
+        scores = ['pos_score', 'neu_score', 'neg_score']
+        if all(s in df.columns for s in scores):
+            means = [df[s].mean() for s in scores]
+            labels = ['Positive', 'Neutral', 'Negative']
+            colors_list = [COLORS['positive'], COLORS['neutral'], COLORS['negative']]
+            ax5.bar(labels, means, color=colors_list, edgecolor='white')
+            ax5.set_title('Average Score Components', fontweight='bold')
+            ax5.set_ylabel('Average Score')
+        
+        # 6. Stats text box
+        ax6 = fig.add_subplot(2, 3, 6)
+        ax6.axis('off')
+        
+        stats_text = f"""
+        SUMMARY STATISTICS
+        {'='*30}
+        
+        Total Tweets: {len(df):,}
+        
+        Sentiment Breakdown:
+          • Positive: {(df['sentiment']=='positive').sum():,} ({(df['sentiment']=='positive').mean()*100:.1f}%)
+          • Neutral: {(df['sentiment']=='neutral').sum():,} ({(df['sentiment']=='neutral').mean()*100:.1f}%)
+          • Negative: {(df['sentiment']=='negative').sum():,} ({(df['sentiment']=='negative').mean()*100:.1f}%)
+        
+        Average Scores:
+          • Compound: {df['compound_score'].mean():.4f}
+          • Positive: {df['pos_score'].mean():.4f}
+          • Negative: {df['neg_score'].mean():.4f}
+        """
+        
+        ax6.text(0.1, 0.9, stats_text, transform=ax6.transAxes, fontsize=11,
+                verticalalignment='top', fontfamily='monospace',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        plt.suptitle('Twitter Sentiment Analysis Dashboard', fontsize=20, fontweight='bold', y=0.98)
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
+        
+        return self.save_plot(fig, filename)
+    
+    # ---------------------------
+    # Generate All Plots
+    # ---------------------------
+    
+    def generate_all_plots(self, df, prefix=''):
+        """Generate all available plots."""
+        print("\nGenerating plots...")
+        
+        plots = []
+        
+        plots.append(self.plot_sentiment_distribution(df, f'{prefix}sentiment_pie.png'))
+        plots.append(self.plot_sentiment_bar(df, f'{prefix}sentiment_bar.png'))
+        plots.append(self.plot_compound_score_distribution(df, f'{prefix}compound_dist.png'))
+        plots.append(self.plot_sentiment_over_time(df, f'{prefix}timeline.png'))
+        plots.append(self.plot_hourly_sentiment(df, f'{prefix}hourly.png'))
+        plots.append(self.plot_engagement_by_sentiment(df, f'{prefix}engagement_box.png'))
+        plots.append(self.plot_engagement_scatter(df, f'{prefix}engagement_scatter.png'))
+        plots.append(self.plot_word_frequency(df, f'{prefix}word_freq.png'))
+        plots.append(self.plot_word_frequency_by_sentiment(df, f'{prefix}words_sentiment.png'))
+        plots.append(self.create_dashboard(df, f'{prefix}dashboard.png'))
+        
+        plots = [p for p in plots if p is not None]
+        print(f"\nGenerated {len(plots)} plots in: {self.output_dir}")
+        
+        return plots
+
+# ---------------------------
+# Main
+# ---------------------------
 
 def main():
-    results_dir = r"D:\code\Edure\New folder\Twitter-Scrapper\data\results"
+    print("=" * 60)
+    print("Twitter Sentiment Plot Generator")
+    print("=" * 60)
     
-    # Check if directory exists
-    if not os.path.exists(results_dir):
-        print(f"Error: Directory not found: {results_dir}")
+    if not os.path.exists(RESULTS_DATA_PATH):
+        print(f"Error: Results directory not found: {RESULTS_DATA_PATH}")
         return
     
-    # List all CSV files
-    csv_files = [f for f in os.listdir(results_dir) 
-                if f.endswith('.csv') and 'sentiment' in f.lower()]
+    csv_files = [f for f in os.listdir(RESULTS_DATA_PATH) if f.endswith('.csv')]
     
     if not csv_files:
-        print(f"No sentiment result CSV files found in: {results_dir}")
+        print(f"No CSV files found in: {RESULTS_DATA_PATH}")
         return
     
-    print(f"Found {len(csv_files)} sentiment result file(s):")
+    print(f"\nFound {len(csv_files)} CSV file(s):")
     for i, file in enumerate(csv_files, 1):
         print(f"  {i}. {file}")
     
-    # Select file
     if len(csv_files) == 1:
         choice = 0
-        print(f"\nAutomatically selecting: {csv_files[0]}")
     else:
-        while True:
-            try:
-                choice = int(input(f"\nSelect file number (1-{len(csv_files)}): ")) - 1
-                if 0 <= choice < len(csv_files):
-                    break
-                else:
-                    print(f"Please enter a number between 1 and {len(csv_files)}")
-            except ValueError:
-                print("Please enter a valid number")
+        choice = int(input(f"\nSelect file (1-{len(csv_files)}): ")) - 1
     
-    selected_file = os.path.join(results_dir, csv_files[choice])
+    selected_file = csv_files[choice]
+    filepath = os.path.join(RESULTS_DATA_PATH, selected_file)
+    
+    print(f"\nLoading: {selected_file}")
+    df = pd.read_csv(filepath, encoding='utf-8')
+    print(f"Loaded {len(df)} records")
+    
+    # Check required columns
+    if 'sentiment' not in df.columns or 'compound_score' not in df.columns:
+        print("Error: File must contain 'sentiment' and 'compound_score' columns.")
+        print("Please run sentiment_analyzer.py first.")
+        return
     
     # Generate plots
-    generator = SentimentPlotGenerator()
-    generator.generate_all_plots(selected_file)
+    prefix = selected_file.replace('.csv', '_').replace('_sentiment', '')
+    plotter = PlotGenerator()
+    plotter.generate_all_plots(df, prefix=prefix)
+    
+    print("\nPlot generation complete!")
 
 if __name__ == "__main__":
     main()

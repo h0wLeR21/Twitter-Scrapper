@@ -1,0 +1,58 @@
+# Configuration file for Twitter Scraper Project
+
+# Scraping Settings
+scraping:
+  default_scrolls: 50
+  default_tweet_type: "original"  # Options: original, original_and_quotes, all
+  checkpoint_interval: 5  # Save checkpoint every N scrolls
+  timeout: 30  # Page load timeout in seconds
+  wait_time: 10  # Wait time for elements to load
+  
+  # Nitter instances (add backups)
+  nitter_instances:
+    - "https://nitter.net"
+    - "https://nitter.poast.org"
+    - "https://nitter.privacydev.net"
+
+# Browser Settings
+browser:
+  headless: false
+  disable_images: true
+  page_load_strategy: "eager"  # Options: normal, eager, none
+  
+# Data Export Settings
+export:
+  default_mode: "timestamp"  # Options: timestamp, increment, merge, ask
+  output_directory: "data/raw"
+  
+# Analysis Settings
+analysis:
+  sentiment:
+    method: "vader"  # Options: vader, textblob, custom
+    language: "en"
+  
+  text_processing:
+    remove_urls: true
+    remove_mentions: true
+    remove_hashtags: false
+    lowercase: true
+    remove_stopwords: true
+
+# Visualization Settings
+visualization:
+  default_theme: "seaborn"
+  figure_size: [12, 8]
+  dpi: 100
+  color_palette: "viridis"
+
+# Logging Settings
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR
+  log_file: "logs/scraper.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Privacy Settings
+privacy:
+  hash_usernames: true
+  hash_user_ids: true
+  anonymize_data: true

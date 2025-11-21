@@ -28,9 +28,9 @@ wheels/
 *.ipynb_checkpoints/
 
 # Data files
-data/raw/*.csv
-data/processed/*.csv
-data/results/*.csv
+#data/raw/*.csv
+#data/processed/*.csv
+#data/results/*.csv
 *.json
 !config/*.json
 

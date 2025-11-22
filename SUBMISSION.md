@@ -8,4 +8,4 @@
 
 ## Project Links
 - GitHub Repository: https://github.com/h0wLeR21/Twitter-Scrapper
-- Google Drive Data: [URL]
+- Google Drive Data: https://drive.google.com/drive/folders/1-zuluY147NCGLaNVWT0J_kk86l6IrzuH?usp=sharing
